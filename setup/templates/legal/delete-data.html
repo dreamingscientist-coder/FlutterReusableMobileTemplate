@@ -1,0 +1,27 @@
+<!doctype html>
+<!-- Template: values in double curly braces are filled by make setup. -->
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Delete my data – {{APP_NAME}}</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;max-width:760px;margin:0 auto;padding:24px 16px;line-height:1.6;color:#1d1d1f;background:#fff}h1{font-size:1.8em;margin-bottom:.2em}h2{font-size:1.2em;margin-top:1.8em}.muted{color:#6e6e73;font-size:.9em}a{color:#0066cc}nav a{margin-right:14px}@media(prefers-color-scheme:dark){body{background:#111;color:#eee}.muted{color:#aaa}a{color:#4da3ff}}</style>
+</head><body>
+<nav class="muted"><a href="index.html">Home</a><a href="privacy.html">Privacy</a><a href="terms.html">Terms</a><a href="support.html">Support</a><a href="delete-data.html">Delete data</a></nav>
+<h1>Delete my data – {{APP_NAME}}</h1>
+<p class="muted">Developer: {{DEVELOPER_NAME}} · App: {{BUNDLE_ID}}</p>
+
+<h2>Data stored on your device</h2>
+<p>Settings<!--IF_IAP--> and your Premium status<!--END_IF_IAP--> are stored only on your device. To delete them, uninstall the app.</p>
+
+<h2>Data we hold</h2>
+<p>The only data we may hold is the emails you sent to support. To have them deleted:</p>
+<ol>
+  <li>Email <a href="mailto:{{SUPPORT_EMAIL}}?subject=Data%20deletion%20request%20-%20{{APP_NAME_URL}}">{{SUPPORT_EMAIL}}</a> with the subject <em>"Data deletion request"</em>.</li>
+  <li>Send it from the email address you used to contact us.</li>
+  <li>We delete the data within 30 days and confirm by email.</li>
+</ol>
+<p>We keep nothing after deletion, except where the law requires us to.</p>
+<!--IF_ADS-->
+<h2>Advertising data (Google)</h2>
+<p>Data used for ads is handled by Google. You can reset your advertising ID in your device settings, change your choice in the app (<em>Settings → Privacy choices</em>), or manage your data at <a href="https://myadcenter.google.com">myadcenter.google.com</a>.</p>
+<!--END_IF_ADS-->
+<p class="muted">© {{DEVELOPER_NAME}} · Contact: <a href="mailto:{{SUPPORT_EMAIL}}">{{SUPPORT_EMAIL}}</a></p>
+</body></html>

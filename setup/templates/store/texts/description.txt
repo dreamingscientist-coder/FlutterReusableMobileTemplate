@@ -1,0 +1,8 @@
+TODO: describe {{APP_NAME}} here.
+
+KEY FEATURES
+• TODO feature 1
+• TODO feature 2
+• TODO feature 3
+
+Questions or ideas? Use "Contact support" in the app settings.

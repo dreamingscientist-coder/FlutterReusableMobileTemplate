@@ -1,0 +1,160 @@
+require "/Users/khacmuoivu/Developer/Tool/Mobile-Release/admob_build.rb"
+require "/Users/khacmuoivu/Developer/Tool/Mobile-Release/release_versions.rb"
+# =====================================================================
+# Android release commands (fastlane)
+#
+# Run from the PROJECT ROOT with make (easiest):
+#   make android-key          check the Google Play JSON key works
+#   make android-internal     build + upload to Internal testing
+#   make android-closed       build + upload to Closed testing
+#   make android-production   build + upload to Production
+#   make android-info         upload listing texts + contact email/phone/website
+#
+# FIRST upload of a brand-new app: Google requires it to be done by hand
+# in Play Console (see docs/NEW_APP_CHECKLIST.md). While the app is still
+# a "draft" in Play Console, add DRAFT=true:
+#   make android-internal DRAFT=true
+#
+# Values come from .env + app.env (project root) and your shared
+# Mobile-Release/developer_profile.env (contact, keys).
+# Uses the shared key + keystore from Tool/Mobile-Release/Android.
+# =====================================================================
+require "shellwords"
+
+# Find the project root (folder with pubspec.yaml), wherever fastlane runs.
+project_root = Dir.pwd
+project_root = File.dirname(project_root) until File.exist?(File.join(project_root, "pubspec.yaml")) || project_root == "/"
+require File.join(project_root, "release", "fastlane_helpers.rb")
+TemplateHelpers.load_envs(project_root)
+
+def admob_dart_defines(platform)
+  prefix = platform == :ios ? "ADMOB_IOS" : "ADMOB_ANDROID"
+  ads = %w[BANNER_ID INTERSTITIAL_ID REWARDED_ID REWARDED_INTERSTITIAL_ID NATIVE_ID APP_OPEN_ID].filter_map do |suffix|
+    key = "#{prefix}_#{suffix}"
+    value = ENV[key].to_s
+    "--dart-define=#{key}=#{value}" unless value.empty?
+  end
+  ads << "--dart-define=FIREBASE_ANALYTICS_ENABLED=#{ENV.fetch("FIREBASE_ANALYTICS_ENABLED", "false")}"
+  if ENV['ADMOB_ENABLE_TEST_DEVICES'] == 'true'
+    ads << '--dart-define=ADMOB_ENABLE_TEST_DEVICES=true'
+    ads << "--dart-define=ADMOB_TEST_DEVICE_IDS=#{ENV.fetch('ADMOB_TEST_DEVICE_IDS', '')}"
+  end
+  ads
+end
+
+default_platform(:android)
+
+platform :android do
+  desc "Check that the Google Play service-account JSON key works"
+  lane :validate_key do
+    TemplateHelpers.require_env!("PLAY_JSON_KEY")
+    TemplateHelpers.require_file!(ENV["PLAY_JSON_KEY"], "Check PLAY_JSON_KEY in developer_profile.env")
+    validate_play_store_json_key(json_key: ENV["PLAY_JSON_KEY"])
+  end
+
+  desc "Build + upload to Internal testing"
+  lane :internal do |options|
+    upload_track(track: "internal", draft: options[:draft])
+  end
+
+  desc "Build + upload to Closed testing (Play track 'alpha')"
+  lane :closed do |options|
+    upload_track(track: "alpha", draft: options[:draft])
+  end
+
+  desc "Build + upload to Production"
+  lane :production do |options|
+    upload_track(track: "production", draft: options[:draft])
+  end
+
+  # -------------------------------------------------------------------
+  desc "Upload listing texts + contact details (no build)"
+  # Texts: store/<language>/*.txt   Contact: developer_profile.env
+  # Needs at least one uploaded build (Google rule for new apps).
+  # -------------------------------------------------------------------
+  lane :info do
+    TemplateHelpers.require_env!("BUNDLE_ID", "PLAY_JSON_KEY", "SUPPORT_EMAIL", "LEGAL_URL")
+    TemplateHelpers.require_file!(ENV["PLAY_JSON_KEY"], "Check PLAY_JSON_KEY in developer_profile.env")
+    TemplateHelpers.check_store_texts!(project_root)
+
+    # 1) Title, short and full description for each language
+    upload_to_play_store(
+      package_name: ENV["BUNDLE_ID"],
+      json_key: ENV["PLAY_JSON_KEY"],
+      metadata_path: TemplateHelpers.build_android_metadata(project_root),
+      skip_upload_apk: true,
+      skip_upload_aab: true,
+      skip_upload_changelogs: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true
+    )
+
+    # 2) Contact details (fastlane has no option for these, so we call
+    #    the Google Play API directly — the library comes with fastlane)
+    require "googleauth"
+    require "google/apis/androidpublisher_v3"
+    publisher = Google::Apis::AndroidpublisherV3
+    service = publisher::AndroidPublisherService.new
+    service.authorization = Google::Auth::ServiceAccountCredentials.make_creds(
+      json_key_io: File.open(ENV["PLAY_JSON_KEY"]),
+      scope: publisher::AUTH_ANDROIDPUBLISHER
+    )
+    website = ENV["DEVELOPER_WEBSITE"].to_s.empty? ? "#{ENV['LEGAL_URL']}/index.html" : ENV["DEVELOPER_WEBSITE"]
+    details = publisher::AppDetails.new(
+      contact_email: ENV["SUPPORT_EMAIL"],
+      contact_website: website,
+      default_language: TemplateHelpers.store_languages.first
+    )
+    details.contact_phone = ENV["PUBLIC_PHONE"] unless ENV["PUBLIC_PHONE"].to_s.empty?
+    package = ENV["BUNDLE_ID"]
+    edit = service.insert_edit(package)
+    begin
+      service.update_edit_detail(package, edit.id, details)
+      service.commit_edit(package, edit.id)
+    rescue Google::Apis::Error => e
+      UI.user_error!("Google Play refused the contact details: #{e.message}")
+    end
+    UI.success("Listing + contact details uploaded. Check Play Console → Grow → Store presence.")
+  end
+
+  # -------------------------------------------------------------------
+  # Helper: build a signed .aab with the next version code and upload it
+  # -------------------------------------------------------------------
+  private_lane :upload_track do |options|
+    track = options[:track]
+    draft = options[:draft].to_s == "true"
+    package = ENV["BUNDLE_ID"]
+    json_key = ENV["PLAY_JSON_KEY"]
+
+    TemplateHelpers.require_env!("BUNDLE_ID", "PLAY_JSON_KEY")
+    TemplateHelpers.require_file!(json_key, "Check PLAY_JSON_KEY in developer_profile.env")
+    TemplateHelpers.require_file!(
+      File.join(project_root, "android/key.properties"),
+      "Release signing is not set up. Copy android/key.properties.example to android/key.properties and fill it."
+    )
+
+
+    plan = ReleaseVersions.android(project_root, package, json_key)
+    ReleaseVersions.persist(project_root, plan)
+    build_number = plan[:build]
+    UI.message("Store-aware Android release: #{plan[:version]}+#{build_number}")
+
+    AdmobBuild.with_defines(project_root, platform: 'android', production: AdmobBuild.production?, values: AdmobBuild.read_args(admob_dart_defines(:android))) do |define|
+      defines = define.shellescape
+      sh("cd #{project_root.shellescape} && flutter build appbundle --release --build-number=#{build_number} --build-name=#{plan[:version]} #{defines}")
+    end
+
+    upload_to_play_store(
+      package_name: package,
+      json_key: json_key,
+      track: track,
+      aab: File.join(project_root, "build/app/outputs/bundle/release/app-release.aab"),
+      release_status: draft ? "draft" : "completed",
+      skip_upload_metadata: true,
+      skip_upload_changelogs: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true
+    )
+    UI.success("Uploaded to '#{track}'. Check Play Console → Test and release.")
+  end
+end

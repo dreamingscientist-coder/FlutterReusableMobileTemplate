@@ -1,0 +1,53 @@
+# =====================================================================
+# pubspec.yaml — Flutter project settings and packages
+#
+# • `name` is changed automatically by `make setup` (setup/new_app.sh).
+# • `version` = <store version>+<build number>
+#     Example: 1.2.0+7  → store shows "1.2.0", build number is 7.
+#     You only change the first part (1.2.0) by hand.
+#     fastlane raises the build number automatically when you release.
+# =====================================================================
+name: flutter_reusable_mobile_template
+description: "Reusable Flutter iOS/Android app template with settings, privacy, ads, auth, purchases, and fastlane."
+publish_to: "none" # never publish this app to pub.dev
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  firebase_analytics: ^11.6.0
+  cupertino_icons: ^1.0.8
+  shared_preferences: ^2.3.0
+
+  # --- Ads (AdMob banner + EU consent form) ---
+  google_mobile_ads: ^7.0.0
+  app_tracking_transparency: ^2.0.7
+  # --- RevenueCat purchases (Premium / Pro validation) ---
+  purchases_flutter: ^8.10.0
+  # --- Optional account sign-in / linking ---
+  firebase_core: ^3.15.0
+  firebase_auth: ^5.7.0
+  google_sign_in: ^6.3.0
+  sign_in_with_apple: ^6.1.0
+  # --- Small helpers ---
+  http: ^1.6.0
+  package_info_plus: ^8.0.0   # reads app version for the About/Support rows
+  share_plus: ^12.0.2        # native share sheet, including iPad anchor
+  url_launcher: ^6.3.0        # opens web pages and the email app
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/rewards/

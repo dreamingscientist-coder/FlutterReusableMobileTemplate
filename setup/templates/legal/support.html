@@ -1,0 +1,31 @@
+<!doctype html>
+<!-- Template: values in double curly braces are filled by make setup. -->
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Support – {{APP_NAME}}</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;max-width:760px;margin:0 auto;padding:24px 16px;line-height:1.6;color:#1d1d1f;background:#fff}h1{font-size:1.8em;margin-bottom:.2em}h2{font-size:1.2em;margin-top:1.8em}.muted{color:#6e6e73;font-size:.9em}a{color:#0066cc}nav a{margin-right:14px}@media(prefers-color-scheme:dark){body{background:#111;color:#eee}.muted{color:#aaa}a{color:#4da3ff}}</style>
+</head><body>
+<nav class="muted"><a href="index.html">Home</a><a href="privacy.html">Privacy</a><a href="terms.html">Terms</a><a href="support.html">Support</a><a href="delete-data.html">Delete data</a></nav>
+<h1>Support</h1>
+<p>Need help with <strong>{{APP_NAME}}</strong>? Email us at <a href="mailto:{{SUPPORT_EMAIL}}?subject={{APP_NAME_URL}}%20support">{{SUPPORT_EMAIL}}</a>. We usually reply within 2 working days.</p>
+<p>To help us, please include your device model, system version and the app version (<em>Settings → About</em>). The in-app <em>Contact support</em> button adds these for you.</p>
+
+<h2>Frequently asked questions</h2>
+<!--IF_IAP-->
+<h3>I bought Premium but still see ads</h3>
+<p>Open <em>Settings → Restore purchases</em>. Make sure you are signed in with the same Apple ID or Google account you used to buy.</p>
+
+<h3>How do I get a refund?</h3>
+<p>Refunds are handled by the store, not by us:</p>
+<ul>
+  <li>iPhone / iPad: <a href="https://reportaproblem.apple.com">reportaproblem.apple.com</a></li>
+  <li>Android: <a href="https://support.google.com/googleplay/answer/2479637">Google Play refund help</a></li>
+</ul>
+<!--END_IF_IAP-->
+<!--IF_ADS-->
+<h3>How do I change my ad privacy choices?</h3>
+<p>Open <em>Settings → Privacy choices</em> in the app (shown in regions where it is required). You can also reset your advertising ID in your device settings.</p>
+<!--END_IF_ADS-->
+<h3>How do I delete my data?</h3>
+<p>See <a href="delete-data.html">Delete my data</a>.</p>
+<p class="muted">© {{DEVELOPER_NAME}} · Contact: <a href="mailto:{{SUPPORT_EMAIL}}">{{SUPPORT_EMAIL}}</a></p>
+</body></html>

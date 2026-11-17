@@ -1,0 +1,221 @@
+require "/Users/khacmuoivu/Developer/Tool/Mobile-Release/admob_build.rb"
+require "/Users/khacmuoivu/Developer/Tool/Mobile-Release/release_versions.rb"
+# =====================================================================
+# iOS release commands (fastlane)
+#
+# Run from the PROJECT ROOT with make (easiest):
+#   make ios-create    ONE TIME: create App ID + app in App Store Connect
+#   make ios-beta      build + upload to TestFlight
+#   make ios-release   build + upload to App Store (you press "Submit")
+#   make ios-info      upload texts, URLs, contact, category (no build)
+#   make ios-privacy   fill the "App Privacy" answers (Apple ID login)
+#
+# Values come from .env + app.env (project root) and your shared
+# Mobile-Release/developer_profile.env (contact, keys).
+# Signing = Xcode automatic signing, authorised by your App Store
+# Connect API key (.p8 in Mobile-Release) → no certificates to manage.
+# =====================================================================
+require "shellwords"
+
+# Find the project root (folder with pubspec.yaml), wherever fastlane runs.
+project_root = Dir.pwd
+project_root = File.dirname(project_root) until File.exist?(File.join(project_root, "pubspec.yaml")) || project_root == "/"
+require File.join(project_root, "release", "fastlane_helpers.rb")
+TemplateHelpers.load_envs(project_root)
+
+def admob_dart_defines(platform)
+  prefix = platform == :ios ? "ADMOB_IOS" : "ADMOB_ANDROID"
+  ads = %w[BANNER_ID INTERSTITIAL_ID REWARDED_ID REWARDED_INTERSTITIAL_ID NATIVE_ID APP_OPEN_ID].filter_map do |suffix|
+    key = "#{prefix}_#{suffix}"
+    value = ENV[key].to_s
+    "--dart-define=#{key}=#{value}" unless value.empty?
+  end
+  ads << "--dart-define=FIREBASE_ANALYTICS_ENABLED=#{ENV.fetch("FIREBASE_ANALYTICS_ENABLED", "false")}"
+  if ENV['ADMOB_ENABLE_TEST_DEVICES'] == 'true'
+    ads << '--dart-define=ADMOB_ENABLE_TEST_DEVICES=true'
+    ads << "--dart-define=ADMOB_TEST_DEVICE_IDS=#{ENV.fetch('ADMOB_TEST_DEVICE_IDS', '')}"
+  end
+  ads
+end
+
+default_platform(:ios)
+
+platform :ios do
+  # -------------------------------------------------------------------
+  desc "ONE TIME: create the App ID and the App Store Connect app"
+  # Apple does not allow this with an API key, so fastlane asks for your
+  # Apple ID password + 2-factor code once.
+  # -------------------------------------------------------------------
+  lane :create_app do
+    TemplateHelpers.require_env!("APP_NAME", "BUNDLE_ID", "APPLE_TEAM_ID", "APPLE_ID")
+    produce(
+      username: ENV["APPLE_ID"],
+      app_identifier: ENV["BUNDLE_ID"],
+      app_name: ENV["APP_NAME"],
+      language: ENV.fetch("APP_PRIMARY_LANGUAGE", "en-US"),
+      app_version: TemplateHelpers.pubspec_version_name(project_root),
+      sku: ENV["BUNDLE_ID"],
+      team_id: ENV["APPLE_TEAM_ID"]
+    )
+    UI.success("App created. Next: add the in-app purchase + app info in App Store Connect, then `make ios-beta`.")
+  end
+
+  # -------------------------------------------------------------------
+  desc "Build and upload to TestFlight"
+  # -------------------------------------------------------------------
+  lane :beta do
+
+    ipa = build_for_store
+    upload_to_testflight(
+      api_key: asc_key,
+      ipa: ipa,
+      skip_waiting_for_build_processing: true
+    )
+    UI.success("Uploaded. The build appears in TestFlight after Apple finishes processing (5–30 min).")
+  end
+
+  # -------------------------------------------------------------------
+  desc "Build and upload to the App Store (NOT submitted for review)"
+  # -------------------------------------------------------------------
+  lane :release do
+
+    ipa = build_for_store
+    upload_to_app_store(
+      api_key: asc_key,
+      ipa: ipa,
+      skip_metadata: true,        # texts are edited on the website
+      skip_screenshots: true,     # screenshots are uploaded on the website
+      submit_for_review: false,   # you press "Add for Review" yourself
+      precheck_include_in_app_purchases: false, # not supported with API key
+      force: true                 # no HTML preview prompt
+    )
+    UI.success("Uploaded. Finish the version page in App Store Connect and submit for review.")
+  end
+
+  # -------------------------------------------------------------------
+  desc "Upload store texts + contact + URLs + category (no build)"
+  # Texts: store/<language>/*.txt   Contact: developer_profile.env
+  # -------------------------------------------------------------------
+  lane :info do
+    TemplateHelpers.require_env!("LEGAL_URL", "DEVELOPER_NAME", "CONTACT_FIRST_NAME",
+                                 "CONTACT_LAST_NAME", "CONTACT_PHONE", "CONTACT_EMAIL")
+    TemplateHelpers.check_store_texts!(project_root)
+    legal = ENV["LEGAL_URL"]
+    marketing = ENV["DEVELOPER_WEBSITE"].to_s.empty? ? "#{legal}/index.html" : ENV["DEVELOPER_WEBSITE"]
+
+    upload_to_app_store(
+      api_key: asc_key,
+      app_identifier: ENV["BUNDLE_ID"],
+      app_version: TemplateHelpers.pubspec_version_name(project_root),
+      metadata_path: TemplateHelpers.build_ios_metadata(project_root),
+      skip_binary_upload: true,
+      skip_screenshots: true,
+      skip_app_version_update: false,
+      # ---- filled from your developer profile / app.env ----
+      support_url: TemplateHelpers.per_language("#{legal}/support.html"),
+      marketing_url: TemplateHelpers.per_language(marketing),
+      privacy_url: TemplateHelpers.per_language("#{legal}/privacy.html"),
+      copyright: "#{Time.now.year} #{ENV['DEVELOPER_NAME']}",
+      primary_category: ENV.fetch("IOS_PRIMARY_CATEGORY", "UTILITIES"),
+      app_review_information: {
+        first_name: ENV["CONTACT_FIRST_NAME"],
+        last_name: ENV["CONTACT_LAST_NAME"],
+        phone_number: ENV["CONTACT_PHONE"],
+        email_address: ENV["CONTACT_EMAIL"],
+        notes: "No login is required. All features are available without an account."
+      },
+      # ------------------------------------------------------
+      submit_for_review: false,
+      run_precheck_before_submit: false,
+      force: true
+    )
+    UI.success("Store info uploaded. Check it in App Store Connect → your app → version page.")
+  end
+
+  # -------------------------------------------------------------------
+  desc "Fill the App Privacy questionnaire (asks Apple ID password + 2FA)"
+  # The answers are saved ONCE in Mobile-Release/appstoreconnect and
+  # reused by every app (one file for apps with ads, one without).
+  # -------------------------------------------------------------------
+  lane :privacy do
+    TemplateHelpers.require_env!("APPLE_ID", "BUNDLE_ID")
+    kind = ENV["ADS_ENABLED"] == "true" ? "with_ads" : "no_ads"
+    json = File.join(ENV["MOBILE_RELEASE_DIR"], "appstoreconnect", "app_privacy_#{kind}.json")
+    if File.exist?(json)
+      UI.message("Reusing saved privacy answers: #{json}")
+      upload_app_privacy_details_to_app_store(
+        username: ENV["APPLE_ID"],
+        app_identifier: ENV["BUNDLE_ID"],
+        json_path: json
+      )
+    else
+      UI.important("First time for '#{kind}' apps: fastlane will ask the privacy questions.")
+      UI.important("Your answers are saved to #{json} and reused next time.")
+      upload_app_privacy_details_to_app_store(
+        username: ENV["APPLE_ID"],
+        app_identifier: ENV["BUNDLE_ID"],
+        output_json_path: json
+      )
+    end
+    UI.success("App Privacy published.")
+  end
+
+  # -------------------------------------------------------------------
+  # Helpers (private = cannot be run directly)
+  # -------------------------------------------------------------------
+  private_lane :asc_key do
+    TemplateHelpers.require_env!("ASC_KEY_ID", "ASC_ISSUER_ID", "ASC_KEY_PATH")
+    TemplateHelpers.require_file!(ENV["ASC_KEY_PATH"], "Check ASC_KEY_PATH in Mobile-Release/developer_profile.env.")
+    app_store_connect_api_key(
+      key_id: ENV["ASC_KEY_ID"],
+      issuer_id: ENV["ASC_ISSUER_ID"],
+      key_filepath: ENV["ASC_KEY_PATH"],
+      in_house: false
+    )
+  end
+
+  # Builds the .ipa and returns its path.
+  private_lane :build_for_store do
+    TemplateHelpers.require_env!("BUNDLE_ID", "APPLE_TEAM_ID", "APP_SLUG")
+    key = asc_key
+
+    plan = ReleaseVersions.ios(project_root, ENV["BUNDLE_ID"])
+    ReleaseVersions.persist(project_root, plan)
+    build_number = plan[:build]
+    UI.message("Store-aware iOS release: #{plan[:version]}+#{build_number}")
+
+    # Keep legacy CocoaPods projects synchronized. New Flutter projects may use
+    # Swift Package Manager only, in which case there is no Podfile and no-op.
+    podfile = File.join(project_root, "ios/Podfile")
+    sh("cd #{File.join(project_root, 'ios').shellescape} && env -u GEM_HOME -u GEM_PATH -u RUBYOPT -u RUBYLIB -u BUNDLE_GEMFILE -u BUNDLE_BIN_PATH -u BUNDLE_PATH pod install") if File.exist?(podfile)
+
+    # 1) Flutter compiles the Dart code (no signing yet).
+    AdmobBuild.with_defines(project_root, platform: 'ios', values: AdmobBuild.read_args(admob_dart_defines(:ios))) do |define|
+      defines = define.shellescape
+      sh("cd #{project_root.shellescape} && env -u GEM_HOME -u GEM_PATH -u RUBYOPT -u RUBYLIB -u BUNDLE_GEMFILE -u BUNDLE_BIN_PATH -u BUNDLE_PATH flutter build ios --release --no-codesign --build-number=#{build_number} --build-name=#{plan[:version]} #{defines}")
+
+      # 2) Make sure Xcode uses automatic signing with your team.
+      update_code_signing_settings(
+        use_automatic_signing: true,
+        path: File.join(project_root, "ios/Runner.xcodeproj"),
+        team_id: ENV["APPLE_TEAM_ID"],
+        targets: ["Runner"],
+        bundle_identifier: ENV["BUNDLE_ID"]
+      )
+
+      # Xcode signs with its signed-in Apple account. API keys are for uploads.
+      signing_args = "-allowProvisioningUpdates"
+
+      build_app(
+        workspace: File.join(project_root, "ios/Runner.xcworkspace"),
+        scheme: "Runner",
+        configuration: "Release",
+        export_method: "app-store",
+        output_directory: File.join(project_root, "build/ios/fastlane"),
+        output_name: "#{ENV['APP_SLUG']}.ipa",
+        xcargs: signing_args,
+        export_xcargs: signing_args
+      )
+    end
+  end
+end
